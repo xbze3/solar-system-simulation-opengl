@@ -85,7 +85,7 @@
       <PreprocessorDefinitions>WIN32;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>C:\Users\davep\source\repos\xbze3\solar-system-simulation-opengl\libraries\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\Users\xbze3\Documents\development\GLFW\solar-system-simulation-opengl\libraries\include</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>
@@ -119,7 +119,7 @@
       <PreprocessorDefinitions>_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <ConformanceMode>true</ConformanceMode>
       <LanguageStandard>stdcpp20</LanguageStandard>
-      <AdditionalIncludeDirectories>C:\Users\davep\source\repos\xbze3\solar-system-simulation-opengl\libraries\include</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>C:\Users\xbze3\Documents\development\GLFW\solar-system-simulation-opengl\libraries\include</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <SubSystem>Console</SubSystem>

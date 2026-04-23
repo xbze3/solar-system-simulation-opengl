@@ -50,6 +50,54 @@ void main()
 }
 )";
 
+// For Saturns ring and also displaying planetary orbits
+void createRingMesh(
+    float innerRadius,
+    float outerRadius,
+    int segments,
+    std::vector<float>& vertices,
+    std::vector<unsigned int>& indices
+) {
+    const float PI = 3.14159265359f;
+
+    for (int i = 0; i <= segments; i++) {
+        float angle = 2.0f * PI * i / segments;
+        float x = cos(angle);
+        float z = sin(angle);
+
+        // outer vertex
+        vertices.push_back(x * outerRadius);
+        vertices.push_back(0.0f);
+        vertices.push_back(z * outerRadius);
+        vertices.push_back(0.0f);
+        vertices.push_back(1.0f);
+        vertices.push_back(0.0f);
+
+        // inner vertex
+        vertices.push_back(x * innerRadius);
+        vertices.push_back(0.0f);
+        vertices.push_back(z * innerRadius);
+        vertices.push_back(0.0f);
+        vertices.push_back(1.0f);
+        vertices.push_back(0.0f);
+    }
+
+    for (int i = 0; i < segments; i++) {
+        int outer1 = i * 2;
+        int inner1 = i * 2 + 1;
+        int outer2 = (i + 1) * 2;
+        int inner2 = (i + 1) * 2 + 1;
+
+        indices.push_back(outer1);
+        indices.push_back(inner1);
+        indices.push_back(outer2);
+
+        indices.push_back(outer2);
+        indices.push_back(inner1);
+        indices.push_back(inner2);
+    }
+}
+
 
 // Shader compilation helper
 unsigned int compileShader(unsigned int type, const char* source) {
@@ -85,6 +133,26 @@ void framebuffer_size_callback(GLFWwindow* window, int width, int height) {
     glViewport(0, 0, width, height);
 }
 
+// Create verticies for lines around the sun showing the paths of the orbits
+void createOrbitCircle(float radius, int segments, std::vector<float>& vertices) {
+    const float PI = 3.14159265359f;
+
+    for (int i = 0; i < segments; i++) {
+        float angle = 2.0f * PI * i / segments;
+        float x = cos(angle) * radius;
+        float z = sin(angle) * radius;
+
+        vertices.push_back(x);
+        vertices.push_back(0.0f);
+        vertices.push_back(z);
+
+        // dummy normal (not used for lines, but shader expects it)
+        vertices.push_back(0.0f);
+        vertices.push_back(1.0f);
+        vertices.push_back(0.0f);
+    }
+}
+
 // Camera variables
 glm::vec3 cameraPos = glm::vec3(0.0f, 0.0f, 30.0f);
 glm::vec3 cameraFront = glm::vec3(0.0f, 0.0f, -1.0f);
@@ -99,6 +167,17 @@ float lastX = 400.0f, lastY = 300.0f;
 bool firstMouse = true;
 float yaw = -90.0f;
 float pitch = 0.0f;
+
+// store camera captured state
+bool cursorDisabled = true;
+bool tabPressedLastFrame = false;
+
+// Moon values
+float moonSize = 0.25f;
+float moonOrbitRadius = 1.5f;
+float moonRotationSpeed = 1.0f;
+float moonRevolutionSpeed = 10.0f;
+glm::vec3 moonColor = glm::vec3(0.8f, 0.8f, 0.85f);
 
 void mouse_callback(GLFWwindow* window, double xpos, double ypos) {
     if (firstMouse) {
@@ -131,24 +210,41 @@ void mouse_callback(GLFWwindow* window, double xpos, double ypos) {
 
 // Create function to keep all input code organized
 void processInput(GLFWwindow* window) {
-    float cameraSpeed = 2.5f * deltaTime; // frame-rate independent speed
+    float cameraSpeed = 8.0f * deltaTime;
+
+    glm::vec3 forward = glm::normalize(cameraFront);
+    glm::vec3 right = glm::normalize(glm::cross(forward, cameraUp));
 
     if (glfwGetKey(window, GLFW_KEY_ESCAPE) == GLFW_PRESS) {
         glfwSetWindowShouldClose(window, true);
     }
 
     if (glfwGetKey(window, GLFW_KEY_W) == GLFW_PRESS) {
-        cameraPos += cameraSpeed * cameraFront;
+        cameraPos += cameraSpeed * forward;
     }
     if (glfwGetKey(window, GLFW_KEY_S) == GLFW_PRESS) {
-        cameraPos -= cameraSpeed * cameraFront;
+        cameraPos -= cameraSpeed * forward;
     }
     if (glfwGetKey(window, GLFW_KEY_A) == GLFW_PRESS) {
-        cameraPos -= glm::normalize(glm::cross(cameraFront, cameraUp)) * cameraSpeed;
+        cameraPos -= right * cameraSpeed;
     }
     if (glfwGetKey(window, GLFW_KEY_D) == GLFW_PRESS) {
-        cameraPos += glm::normalize(glm::cross(cameraFront, cameraUp)) * cameraSpeed;
+        cameraPos += right * cameraSpeed;
     }
+
+    if (glfwGetKey(window, GLFW_KEY_TAB) == GLFW_PRESS && !tabPressedLastFrame) {
+        cursorDisabled = !cursorDisabled;
+
+        if (cursorDisabled) {
+            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_DISABLED);
+            firstMouse = true;
+        }
+        else {
+            glfwSetInputMode(window, GLFW_CURSOR, GLFW_CURSOR_NORMAL);
+        }
+    }
+
+    tabPressedLastFrame = (glfwGetKey(window, GLFW_KEY_TAB) == GLFW_PRESS);
 }
 
 int main()
@@ -270,7 +366,6 @@ int main()
 
     // Matrices
     glm::mat4 model = glm::mat4(1.0f);
-    glm::mat4 projection = glm::perspective(glm::radians(45.0f), 800.0f / 600.0f, 0.1f, 100.0f);
 
     glUseProgram(shaderProgram);
     unsigned int modelLoc = glGetUniformLocation(shaderProgram, "model");
@@ -286,7 +381,78 @@ int main()
         float orbitRadius;   // simulation units
         float rotationSpeed; // degrees per second
         float revolutionSpeed;// degrees per second
-    } sun = {"Sun", 10.0f, 0.0f, 0.2f, 0.0f};
+        glm::vec3 color; // added color so we can tell between the spheres for right now
+    };
+
+    // Enable for scary mode
+    //std::vector<Body> bodies = {
+    //    {"Sun",     5.3631f,   0.0f,      0.2f,  0.0f,  glm::vec3(1.0f, 0.85f, 0.2f)},
+    //    {"Mercury", 1.0153f,   8.0000f,   0.4f,  1.6f,  glm::vec3(0.7f, 0.7f, 0.7f)},
+    //    {"Venus",   1.0380f,  14.9499f,   0.15f, 1.2f,  glm::vec3(0.9f, 0.7f, 0.3f)},
+    //    {"Earth",   1.0400f,  20.6701f,   0.5f,  1.0f,  glm::vec3(0.2f, 0.4f, 1.0f)},
+    //    {"Mars",    1.0213f,  31.4888f,   0.45f, 0.8f,  glm::vec3(0.8f, 0.3f, 0.2f)},
+    //    {"Jupiter", 1.4484f, 107.5786f,   0.9f,  0.4f,  glm::vec3(0.8f, 0.6f, 0.4f)},
+    //    {"Saturn",  1.3780f, 198.0656f,   0.8f,  0.3f,  glm::vec3(0.9f, 0.8f, 0.5f)},
+    //    {"Uranus",  1.1603f, 396.8912f,   0.6f,  0.2f,  glm::vec3(0.5f, 0.8f, 0.9f)},
+    //    {"Neptune", 1.1553f, 621.0846f,   0.55f, 0.15f, glm::vec3(0.3f, 0.5f, 0.9f)}
+    //};
+
+    std::vector<Body> bodies = {
+        {"Sun",     4.5f,   0.0f,  0.2f,  6.0f,  glm::vec3(1.0f, 0.85f, 0.2f)},
+        {"Mercury", 0.45f,  16.0f,  0.4f,  7.6f,  glm::vec3(0.7f, 0.7f, 0.7f)},
+        {"Venus",   0.85f, 19.0f,  0.15f, 7.2f,  glm::vec3(0.9f, 0.7f, 0.3f)},
+        {"Earth",   0.90f, 22.5f,  0.5f,  7.0f,  glm::vec3(0.2f, 0.4f, 1.0f)},
+        {"Mars",    0.65f, 26.0f,  0.45f, 6.8f,  glm::vec3(0.8f, 0.3f, 0.2f)},
+        {"Jupiter", 2.20f, 31.5f,  0.9f,  6.4f,  glm::vec3(0.8f, 0.6f, 0.4f)},
+        {"Saturn",  1.90f, 40.0f,  0.8f,  6.3f,  glm::vec3(0.9f, 0.8f, 0.5f)},
+        {"Uranus",  1.30f, 46.5f,  0.6f,  6.2f,  glm::vec3(0.5f, 0.8f, 0.9f)},
+        {"Neptune", 1.20f, 53.0f,  0.55f, 6.15f, glm::vec3(0.3f, 0.5f, 0.9f)}
+    };
+
+    // Setup Saturns ring buffers
+    std::vector<float> ringVertices;
+    std::vector<unsigned int> ringIndices;
+    createRingMesh(2.4f, 3.6f, 100, ringVertices, ringIndices);
+
+    unsigned int ringVAO, ringVBO, ringEBO;
+    glGenVertexArrays(1, &ringVAO);
+    glGenBuffers(1, &ringVBO);
+    glGenBuffers(1, &ringEBO);
+
+    glBindVertexArray(ringVAO);
+
+    glBindBuffer(GL_ARRAY_BUFFER, ringVBO);
+    glBufferData(GL_ARRAY_BUFFER, ringVertices.size() * sizeof(float), ringVertices.data(), GL_STATIC_DRAW);
+
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ringEBO);
+    glBufferData(GL_ELEMENT_ARRAY_BUFFER, ringIndices.size() * sizeof(unsigned int), ringIndices.data(), GL_STATIC_DRAW);
+
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
+    glEnableVertexAttribArray(1);
+
+    // Draw rings around the sun showing the orbits of the planets
+    std::vector<float> orbitVertices;
+    createOrbitCircle(1.0f, 100, orbitVertices); // unit circle
+
+    unsigned int orbitVAO, orbitVBO;
+    glGenVertexArrays(1, &orbitVAO);
+    glGenBuffers(1, &orbitVBO);
+
+    glBindVertexArray(orbitVAO);
+
+    glBindBuffer(GL_ARRAY_BUFFER, orbitVBO);
+    glBufferData(GL_ARRAY_BUFFER, orbitVertices.size() * sizeof(float), orbitVertices.data(), GL_STATIC_DRAW);
+
+    // position
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)0);
+    glEnableVertexAttribArray(0);
+
+    // normal (dummy)
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, 6 * sizeof(float), (void*)(3 * sizeof(float)));
+    glEnableVertexAttribArray(1);
 
     // Callbacks and input
     glfwSetFramebufferSizeCallback(window, framebuffer_size_callback);
@@ -299,6 +465,7 @@ int main()
         deltaTime = currentFrame - lastFrame;
         lastFrame = currentFrame;
 
+
         processInput(window);
 
         glClearColor(0.02f, 0.02f, 0.05f, 1.0f);
@@ -306,32 +473,131 @@ int main()
 
         glm::mat4 view = glm::lookAt(cameraPos, cameraPos + cameraFront, cameraUp);
 
-        glUseProgram(shaderProgram);
-        // Update model for the sun: scale by `sun.scaledSize` and rotate over time
-        float time = (float)glfwGetTime();
-        glm::mat4 sunModel = glm::mat4(1.0f);
-        // Revolution around origin (sun.orbitRadius=0 -> no translation)
-        float revAngle = glm::radians(sun.revolutionSpeed * time);
-        glm::vec3 sunPos = glm::vec3(cos(revAngle) * sun.orbitRadius, 0.0f, sin(revAngle) * sun.orbitRadius);
-        sunModel = glm::translate(sunModel, sunPos);
-        // Self rotation
-        float rotAngle = glm::radians(sun.rotationSpeed * time);
-        sunModel = glm::rotate(sunModel, rotAngle, glm::vec3(0.0f, 1.0f, 0.0f));
-        // Scale to desired size
-        sunModel = glm::scale(sunModel, glm::vec3(sun.scaledSize));
+        // Rebuild projection matrix using current window size
+        int width, height;
+        glfwGetFramebufferSize(window, &width, &height);
+        if (height == 0) height = 1;
 
-        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(sunModel));
+        glm::mat4 projection = glm::perspective(
+            glm::radians(70.0f),
+            (float)width / (float)height,
+            0.1f,
+            100.0f
+        );
+
+        glUseProgram(shaderProgram);
+
+        // Update model for the sun: scale by `sun.scaledSize` and rotate over time
+        // I updated this to be a loop that loops through the planet definitions in the vector above 
+
+        float time = (float)glfwGetTime();
+
+        // Value to store earths position so that the moon can orbit it as the origin
+        glm::vec3 earthPosition(0.0f);
+
+        for (const Body& body : bodies) {
+            glm::mat4 model = glm::mat4(1.0f);
+
+            // Revolution around the origin
+            float revAngle = glm::radians(body.revolutionSpeed * time);
+            glm::vec3 position = glm::vec3(
+                cos(revAngle) * body.orbitRadius,
+                0.0f,
+                sin(revAngle) * body.orbitRadius
+            );
+            model = glm::translate(model, position);
+
+            // Self rotation
+            float rotAngle = glm::radians(body.rotationSpeed * time);
+            model = glm::rotate(model, rotAngle, glm::vec3(0.0f, 1.0f, 0.0f));
+
+            // Scale
+            model = glm::scale(model, glm::vec3(body.scaledSize));
+
+            glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(model));
+            glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
+            glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
+            glUniform3f(colorLoc, body.color.r, body.color.g, body.color.b);
+
+            glm::vec3 lightDir = glm::normalize(glm::vec3(-0.2f, -1.0f, -0.3f));
+            glUniform3f(lightDirLoc, lightDir.x, lightDir.y, lightDir.z);
+
+            glBindVertexArray(VAO);
+            glDrawElements(GL_TRIANGLES, (GLsizei)indices.size(), GL_UNSIGNED_INT, 0);
+
+            // Draw lines around sun showing the orbits of the plantes
+            if (body.orbitRadius > 0.0f) {
+                glm::mat4 orbitModel = glm::mat4(1.0f);
+
+                // scale unit circle to planet orbit radius
+                orbitModel = glm::scale(orbitModel, glm::vec3(body.orbitRadius));
+
+                glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(orbitModel));
+                glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
+                glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
+
+                // dim color for orbit line
+                glUniform3f(colorLoc, 0.5f, 0.5f, 0.5f);
+
+                glBindVertexArray(orbitVAO);
+                glDrawArrays(GL_LINE_LOOP, 0, 100);
+            }
+
+            if (body.name == "Earth") {
+                earthPosition = position;
+            }
+
+            if (body.name == "Saturn") {
+                glm::mat4 ringModel = glm::mat4(1.0f);
+
+                float revAngle = glm::radians(body.revolutionSpeed * time);
+                glm::vec3 position = glm::vec3(
+                    cos(revAngle) * body.orbitRadius,
+                    0.0f,
+                    sin(revAngle) * body.orbitRadius
+                );
+                ringModel = glm::translate(ringModel, position);
+
+                // slight tilt
+                ringModel = glm::rotate(ringModel, glm::radians(25.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+
+                glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(ringModel));
+                glUniform3f(colorLoc, 0.8f, 0.75f, 0.6f);
+
+                glBindVertexArray(ringVAO);
+                glDrawElements(GL_TRIANGLES, (GLsizei)ringIndices.size(), GL_UNSIGNED_INT, 0);
+            }
+
+        }
+
+        // Draw moon
+
+        glm::mat4 moonModel = glm::mat4(1.0f);
+
+        float moonAngle = glm::radians(moonRevolutionSpeed * time);
+        glm::vec3 moonOffset = glm::vec3(
+            cos(moonAngle) * moonOrbitRadius,
+            0.0f,
+            sin(moonAngle) * moonOrbitRadius
+        );
+
+        moonModel = glm::translate(moonModel, earthPosition + moonOffset);
+
+        float moonRotAngle = glm::radians(moonRotationSpeed * time);
+        moonModel = glm::rotate(moonModel, moonRotAngle, glm::vec3(0.0f, 1.0f, 0.0f));
+        moonModel = glm::scale(moonModel, glm::vec3(moonSize));
+
+        glUniformMatrix4fv(modelLoc, 1, GL_FALSE, glm::value_ptr(moonModel));
         glUniformMatrix4fv(viewLoc, 1, GL_FALSE, glm::value_ptr(view));
         glUniformMatrix4fv(projectionLoc, 1, GL_FALSE, glm::value_ptr(projection));
-        glUniform3f(colorLoc, 1.0f, 0.85f, 0.2f);
-        glm::vec3 lightDir = glm::normalize(glm::vec3(-0.2f, -1.0f, -0.3f));
-        glUniform3f(lightDirLoc, lightDir.x, lightDir.y, lightDir.z);
+        glUniform3f(colorLoc, moonColor.r, moonColor.g, moonColor.b);
 
         glBindVertexArray(VAO);
         glDrawElements(GL_TRIANGLES, (GLsizei)indices.size(), GL_UNSIGNED_INT, 0);
 
-        glfwSwapBuffers(window);
         glfwPollEvents();
+
+        glfwSwapBuffers(window);
     }
 
     // Cleanup
